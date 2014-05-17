@@ -327,6 +327,43 @@ class Conveyor
     }
 
     /**
+     * @param $target
+     * @param $version
+     * @param array $options
+     *
+     * @return array
+     */
+    protected function getBuildBeforeAfter($target, $version, array $options)
+    {
+        $transporter    = $this->getTransporter($target);
+        $builder        = $this->getBuilder();
+        $remoteInfoFile = $this->container->getParameter('conveyor.remoteinfofile');
+        $strategy       = $this->getStrategy($transporter);
+
+        $context = new Context();
+        $context
+            ->setFullDeploy($options['full_deploy'])
+            ->setBuilddir($builder->getBuildDir())
+            ->setVersion($version)
+            ->setTarget($target)
+            ->setStrategy($strategy)
+        ;
+
+        $versionFile = FilePath::join(
+            $transporter->getPath(),
+            $context->getStrategy()->getCurrentReleasePath(),
+            $remoteInfoFile
+        );
+        $content = $transporter->get($versionFile);
+
+        list($name, $build) = explode(':', trim($content));
+        $versionBefore = $build;
+        $versionAfter = $version->getBuild();
+
+        return array($versionBefore, $versionAfter);
+    }
+
+    /**
      * Deploys version to target
      *
      * @param string $target
@@ -342,7 +379,7 @@ class Conveyor
             'deploy_after_only' => false,
         );
 
-        $this->setConfigParametersForTarget($target);
+        $this->setConfigParametersForTarget($target, $version, $options);
 
         $config         = $this->getConfig()->getConfig();
         $derived        = $config['build']['derived'];
@@ -442,7 +479,7 @@ class Conveyor
             'full_deploy' => false,
         );
 
-        $this->setConfigParametersForTarget($target);
+        $this->setConfigParametersForTarget($target, $version, $options);
 
         $transporter = $this->getTransporter($target);
         $readOnlyTransporter = $this->container->get('transporter.readonly');
@@ -543,7 +580,12 @@ class Conveyor
         ;
     }
 
-    protected function setConfigParametersForTarget($target)
+    /**
+     * @param $target
+     * @param $version
+     * @param array $options
+     */
+    protected function setConfigParametersForTarget($target, $version = null, array $options = array())
     {
         $this->getConfig()->setParameter('target', $target);
 
@@ -552,6 +594,12 @@ class Conveyor
         $transporterOptions = $config['targets'][$target]['transport'];
         foreach ($transporterOptions as $key => $value) {
             $this->getConfig()->setParameter('target.transport.' . $key, $value);
+        }
+
+        if (!empty($version) && !empty($options)) {
+            list($buildBefore, $buildAfter) = $this->getBuildBeforeAfter($target, $version, $options);
+            $this->getConfig()->setParameter('build_before', $buildBefore);
+            $this->getConfig()->setParameter('build_after', $buildAfter);
         }
     }
 }
